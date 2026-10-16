@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="docs/assets/hero.svg" alt="CryptoPayments — Receive. Verify. Notify. USDT BEP20 payment infrastructure in Go." width="100%">
-</p>
-
-<p align="center">
   <a href="go.mod"><img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.25"></a>
   <img src="https://img.shields.io/badge/Network-BNB_Smart_Chain-F0B90B?style=flat-square" alt="BNB Smart Chain">
   <img src="https://img.shields.io/badge/Asset-USDT_BEP20-26A17B?style=flat-square" alt="USDT BEP20">
@@ -58,20 +54,15 @@ The server derives deposit addresses from an xpub at `m/44'/60'/0'/0/<index>`.
 only the isolated `sweeper` process mounts that seed and the gas-wallet key.
 No signing key is supplied to the API runtime.
 
-[Interactive architecture](docs/diagrams/architecture.html) ·
-[Diagram sources & viewing instructions](docs/diagrams/README.md)
+[Diagram source](docs/diagrams/architecture.json)
 
 ## Payment flow
-
-![Invoice creation, transfer confirmation and webhook delivery](docs/diagrams/payment-flow.svg)
 
 1. **Create:** your backend submits an order ID and a string amount using Bearer authentication.
 2. **Receive:** the customer sends the configured token to the returned deposit address.
 3. **Confirm:** the scanner checks finality, confirmation depth, the token and recipient, and canonical block data.
 4. **Commit:** matching transfers, the invoice total, the cursor and any update event commit in one SQLite transaction.
 5. **Notify:** your backend polls the invoice or receives an HMAC-signed webhook when configured.
-
-[Interactive payment sequence](docs/diagrams/payment-flow.html)
 
 ### The acceptance rule
 
@@ -287,12 +278,6 @@ unchanged for retry.
 
 ## Automatic collection to your main wallet
 
-![Optional gas funding and USDT collection sequence](docs/diagrams/sweep-flow.svg)
-
-[Interactive collection sequence](docs/diagrams/sweep-flow.html) ·
-[Architecture](#architecture)
-
-
 Set the main BSC wallet **address** in `.env`. You keep its seed/private key in
 your own wallet to spend funds later; receiving collections does not require
 giving its key to this service. The signer needs the **deposit wallet seed**
@@ -470,8 +455,7 @@ npx --yes solc@0.8.30 --bin --abi -o contracts/build contracts/TestUSDT.sol
 | [`openapi.yaml`](openapi.yaml) | Machine-readable API contract |
 | [`scripts/local_test.py`](scripts/local_test.py) | Isolated Anvil setup and transfer integration tests |
 | [`contracts/`](contracts/) | Test-only token source and compiled artifacts |
-| [`docs/diagrams/`](docs/diagrams/) | Archify diagrams, SVG previews and editable JSON sources |
+| [`docs/diagrams/`](docs/diagrams/) | Single architecture SVG and editable Archify source |
 
-The architecture and flow diagrams describe both the watch-only receiver and
-the optional signer at the revision pinned in their JSON. Local signed-transfer
-tests passed; the diagrams do not imply a public-network deployment.
+The architecture diagram covers the watch-only receiver and optional signer
+at the revision pinned in its JSON. It does not imply a public-network deployment.
