@@ -1,0 +1,4 @@
+# Keep generated Archify exports byte-identical to their checked artifacts.
+# Hide bundled viewer/font code from the default review and language summary.
+docs/diagrams/*.html linguist-generated=true -whitespace
+docs/diagrams/*.svg linguist-generated=true -whitespace

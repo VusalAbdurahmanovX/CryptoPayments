@@ -9,3 +9,6 @@
 *.seed
 coverage.out
 __pycache__/
+
+# Local diagram generation and browser evidence
+/.archify/

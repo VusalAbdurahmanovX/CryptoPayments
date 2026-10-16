@@ -1,0 +1,299 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "CryptoPayments | System architecture",
+    "locale": "en",
+    "output": ".archify/architecture-cryptopayments-20261016-234259/architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "git@github.com:VusalAbdurahmanovX/CryptoPayments.git",
+      "revision": "e237f703d27d6e8deff866795ed56514ba5ab91b",
+      "link_mode": "local-only"
+    }
+  },
+  "components": [
+    {
+      "id": "merchant",
+      "type": "external",
+      "label": "Your application",
+      "sublabel": "Create / read invoices",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "http.go",
+          "line": 37,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Invoice API",
+      "sublabel": "Bearer auth / watch-only",
+      "pos": [
+        365,
+        40
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "http.go",
+          "line": 53,
+          "end_line": 63
+        },
+        {
+          "path": "http.go",
+          "line": 91,
+          "end_line": 130
+        },
+        {
+          "path": "store.go",
+          "line": 178,
+          "end_line": 221
+        }
+      ]
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "SQLite + outbox",
+      "sublabel": "Invoices / transfers / events",
+      "pos": [
+        690,
+        40
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "store.go",
+          "line": 86,
+          "end_line": 103
+        },
+        {
+          "path": "store.go",
+          "line": 287,
+          "end_line": 355
+        },
+        {
+          "path": "store.go",
+          "line": 385,
+          "end_line": 398
+        }
+      ]
+    },
+    {
+      "id": "dispatcher",
+      "type": "backend",
+      "label": "Webhook dispatcher",
+      "sublabel": "Ordered delivery / retry",
+      "pos": [
+        1015,
+        40
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "webhook.go",
+          "line": 34,
+          "end_line": 80
+        }
+      ]
+    },
+    {
+      "id": "wallet",
+      "type": "external",
+      "label": "Customer wallet",
+      "sublabel": "Send configured token",
+      "pos": [
+        40,
+        265
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "README.md",
+          "line": 1,
+          "end_line": 10
+        },
+        {
+          "path": "rpc.go",
+          "line": 133,
+          "end_line": 137
+        }
+      ]
+    },
+    {
+      "id": "chain",
+      "type": "cloud",
+      "label": "BNB Smart Chain",
+      "sublabel": "Token transfers / JSON-RPC",
+      "pos": [
+        365,
+        265
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "rpc.go",
+          "line": 112,
+          "end_line": 137
+        }
+      ]
+    },
+    {
+      "id": "scanner",
+      "type": "backend",
+      "label": "Transfer scanner",
+      "sublabel": "Finality + confirmations",
+      "pos": [
+        690,
+        265
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "scanner.go",
+          "line": 33,
+          "end_line": 75
+        },
+        {
+          "path": "scanner.go",
+          "line": 78,
+          "end_line": 137
+        }
+      ]
+    },
+    {
+      "id": "receiver",
+      "type": "external",
+      "label": "Webhook endpoint",
+      "sublabel": "Operator-configured URL",
+      "pos": [
+        1015,
+        265
+      ],
+      "size": [
+        170,
+        72
+      ],
+      "sources": [
+        {
+          "path": "webhook.go",
+          "line": 34,
+          "end_line": 64
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "create",
+      "from": "merchant",
+      "to": "api",
+      "label": "Bearer HTTP",
+      "variant": "emphasis"
+    },
+    {
+      "id": "persist",
+      "from": "api",
+      "to": "db",
+      "label": "Read / create",
+      "variant": "emphasis"
+    },
+    {
+      "id": "head",
+      "from": "api",
+      "to": "chain",
+      "label": "Latest block",
+      "variant": "default"
+    },
+    {
+      "id": "send",
+      "from": "wallet",
+      "to": "chain",
+      "label": "Token transfer",
+      "variant": "emphasis"
+    },
+    {
+      "id": "scan",
+      "from": "scanner",
+      "to": "chain",
+      "label": "Finalized logs",
+      "variant": "default"
+    },
+    {
+      "id": "credit",
+      "from": "scanner",
+      "to": "db",
+      "label": "Validate / apply",
+      "variant": "emphasis"
+    },
+    {
+      "id": "outbox",
+      "from": "dispatcher",
+      "to": "db",
+      "label": "Outbox / ack",
+      "variant": "default"
+    },
+    {
+      "id": "notify",
+      "from": "dispatcher",
+      "to": "receiver",
+      "label": "Signed POST",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Receive without signing",
+      "items": [
+        "One HD address per invoice, derived from an xpub.",
+        "The API holds no seed or transaction signing key."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Credit confirmed funds",
+      "items": [
+        "Only the configured chain, token and recipient count.",
+        "Confirmed total >= requested amount sets is_paid=true."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Persist, then notify",
+      "items": [
+        "Transfer dedupe, scan cursor and event commit atomically.",
+        "Optional webhooks retry until 2xx; deduplicate event IDs."
+      ]
+    }
+  ]
+}

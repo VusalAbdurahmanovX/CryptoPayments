@@ -1,26 +1,102 @@
-# CryptoPayments — Go USDT BEP20 receiver API
+<p align="center">
+  <img src="docs/assets/hero.svg" alt="CryptoPayments — Receive. Verify. Notify. USDT BEP20 payment infrastructure in Go." width="100%">
+</p>
 
-A standalone HTTP API for creating unique payment addresses and confirming USDT
-payments on BNB Smart Chain. No website, admin panel or third-party payment gateway.
+<p align="center">
+  <a href="go.mod"><img src="https://img.shields.io/badge/Go-1.25-00ADD8?style=flat-square&amp;logo=go&amp;logoColor=white" alt="Go 1.25"></a>
+  <img src="https://img.shields.io/badge/Network-BNB_Smart_Chain-F0B90B?style=flat-square" alt="BNB Smart Chain">
+  <img src="https://img.shields.io/badge/Asset-USDT_BEP20-26A17B?style=flat-square" alt="USDT BEP20">
+  <img src="https://img.shields.io/badge/Storage-SQLite_WAL-4169E1?style=flat-square" alt="SQLite WAL">
+  <img src="https://img.shields.io/badge/Wallet-Watch--only-8B5CF6?style=flat-square" alt="Watch-only wallet">
+</p>
 
-`Your application -> create invoice -> unique address -> token transfer -> confirmed status / signed webhook`
+<h1 align="center">CryptoPayments</h1>
+
+<p align="center">
+  <strong>Your invoices. Your addresses. Your payment infrastructure.</strong><br>
+  A self-hosted Go API that receives and verifies USDT payments on BNB Smart Chain.<br>
+  Create an invoice, receive funds at a unique address, and get confirmed status or a signed webhook.
+</p>
+
+<p align="center">
+  <a href="#quick-local-test--no-funds-or-faucet-needed">Quick start</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#payment-flow">Payment flow</a> ·
+  <a href="#api">API</a> ·
+  <a href="openapi.yaml">OpenAPI contract</a> ·
+  <a href="#webhooks">Webhooks</a>
+</p>
+
+---
+
+## Built for a clear payment boundary
+
+| Receive | Verify | Notify |
+| :--- | :--- | :--- |
+| Fresh HD deposit address for every invoice | Configured token, recipient, confirmations **and** finality | Poll invoice status or consume signed webhooks |
+| Idempotent `order_id` + amount | Exact 18-decimal integer arithmetic | Durable outbox, retry/backoff and per-invoice ordering |
+| Watch-only xpub; signing keys stay offline | Partial transfers accumulate; excess payments count | Persistent invoice snapshots and event IDs |
+
+> **Current scope:** an API-only payment receiver. Funds stay at the generated
+> addresses; treasury collection requires a separate signer/sweep service and
+> BNB for gas. Local EVM integration tests have run. Public BSC Testnet
+> end-to-end validation and real-money validation are still pending.
+
+## Architecture
+
+![CryptoPayments system architecture](docs/diagrams/architecture.svg)
+
+The HTTP API, transfer scanner and webhook dispatcher run in **one Go process**.
+SQLite stores invoices, address allocation, confirmed transfers, scan cursors
+and the optional webhook outbox. BSC JSON-RPC is the external chain data source.
+
+The server derives deposit addresses from an xpub at `m/44'/60'/0'/0/<index>`.
+Only the separate offline `wallet-init` command handles the seed. No signing
+key is supplied to the API runtime.
+
+[Interactive architecture](docs/diagrams/architecture.html) ·
+[Diagram sources & viewing instructions](docs/diagrams/README.md)
+
+## Payment flow
+
+![Invoice creation, transfer confirmation and webhook delivery](docs/diagrams/payment-flow.svg)
+
+1. **Create:** your backend submits an order ID and a string amount using Bearer authentication.
+2. **Receive:** the customer sends the configured token to the returned deposit address.
+3. **Confirm:** the scanner checks finality, confirmation depth, the token and recipient, and canonical block data.
+4. **Commit:** matching transfers, the invoice total, the cursor and any update event commit in one SQLite transaction.
+5. **Notify:** your backend polls the invoice or receives an HMAC-signed webhook when configured.
+
+[Interactive payment sequence](docs/diagrams/payment-flow.html)
+
+### The acceptance rule
+
+```text
+is_paid = confirmed received amount >= requested amount
+```
+
+| Requested | Confirmed deposits | Result | `is_paid` |
+| --- | --- | --- | --- |
+| 10 USDT | 4 USDT | `partially_paid` | `false` |
+| 10 USDT | 4 + 6 USDT | `paid` | `true` |
+| 10 USDT | 12 USDT | `overpaid` | `true` |
+| 10 USDT | 10 USDT, threshold reached after expiry | `paid_late` | `true` |
+
+Timing uses the transfer block's timestamp. Late payment remains explicit in
+`status`; your application decides whether a late order should be fulfilled.
+Always deduplicate fulfilment by invoice ID.
 
 ## What works
 
-- One fresh HD address per invoice (`m/44'/60'/0'/0/<index>`).
-- Idempotent order creation: repeat the same `order_id` and amount to get the same invoice.
-- Exact integer arithmetic at 18 decimals; JSON amounts are **strings**.
-- Partial payments accumulate; overpayments and late payments are explicit.
-- Only the configured token contract and chain count as payment.
+- Unique HD address per invoice; addresses are never reassigned.
+- Same order and numeric amount return the existing invoice; a changed amount returns 409.
+- JSON amounts are **strings**; all accounting uses integer arithmetic at 18 decimals.
+- Partial, exact, excess, expired and late payment states.
+- Only the configured chain and token contract can count as payment.
 - Both configured confirmation depth **and** RPC `finalized` block are required.
-- SQLite transactions, durable per-invoice scan cursors and unique `(tx_hash, log_index)` records.
-- Durable signed webhook outbox with retry/backoff and event ordering per invoice.
-- Watch-only API: xpub only. No seed, signing key, withdrawals or automatic sweep in the server.
-- Mainnet (56), public BSC Testnet (97), and an isolated local EVM for repeatable tests.
-
-This first version receives and verifies payments. Funds remain at the generated
-addresses. Collecting them into a treasury requires a separate signing/sweep
-service and BNB for gas. No real money has been used to validate this version.
+- Durable per-invoice cursors and unique `(tx_hash, log_index)` records.
+- Signed webhook outbox with retry/backoff and per-invoice event ordering.
+- Mainnet configuration (56), public testnet configuration (97), and isolated local EVM tests.
 
 ## Quick local test — no funds or faucet needed
 
@@ -67,6 +143,14 @@ All `/v1/*` routes require `Authorization: Bearer <API_KEY>`. See
 only. Put authenticated HTTPS ingress in front if external applications need access.
 The API key grants access to all invoices in this service; this is not a
 multi-merchant authorization system.
+
+| Method | Route | Authentication | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/v1/invoices` | Bearer | Create an invoice or replay an existing order |
+| `GET` | `/v1/invoices/{id}` | Bearer | Invoice, confirmed transfers and payment status |
+| `GET` | `/v1/status` | Bearer | Scanner health, safe block and chain configuration |
+| `GET` | `/healthz` | Public | Process liveness |
+| `GET` | `/readyz` | Public | Scanner readiness; 503 when unhealthy or stale |
 
 Create an invoice:
 
@@ -243,3 +327,21 @@ Recompile the checked-in test contract artifacts if editing Solidity:
 ```sh
 npx --yes solc@0.8.30 --bin --abi -o contracts/build contracts/TestUSDT.sol
 ```
+
+## Repository map
+
+| Path | Responsibility |
+| --- | --- |
+| [`http.go`](http.go) | HTTP routes, Bearer authentication and invoice input validation |
+| [`wallet.go`](wallet.go) | HD address derivation and offline wallet initialization |
+| [`scanner.go`](scanner.go) / [`rpc.go`](rpc.go) | Finalized-range scanning and JSON-RPC validation |
+| [`store.go`](store.go) / [`amount.go`](amount.go) | SQLite transactions, payment state and exact amounts |
+| [`webhook.go`](webhook.go) | HMAC signatures, ordered outbox delivery and retry/backoff |
+| [`openapi.yaml`](openapi.yaml) | Machine-readable API contract |
+| [`scripts/local_test.py`](scripts/local_test.py) | Isolated Anvil setup and transfer integration tests |
+| [`contracts/`](contracts/) | Test-only token source and compiled artifacts |
+| [`docs/diagrams/`](docs/diagrams/) | Archify diagrams, SVG previews and editable JSON sources |
+
+Diagrams describe the checked-in implementation. Their source revision is
+pinned in the diagram JSON; they do not imply that a public network deployment
+or a sweep service exists.
