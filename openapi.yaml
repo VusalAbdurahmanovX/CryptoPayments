@@ -1,0 +1,169 @@
+openapi: 3.0.3
+info:
+  title: CryptoPayments
+  version: 0.1.0
+  description: Watch-only USDT BEP20 invoice API. Monetary amounts are decimal strings with up to 18 fractional digits. Testnet tokens have no monetary value.
+servers:
+  - url: http://127.0.0.1:18090
+security:
+  - bearerAuth: []
+paths:
+  /v1/invoices:
+    post:
+      summary: Create a unique-address invoice, idempotent by order_id and amount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [order_id, amount]
+              properties:
+                order_id:
+                  type: string
+                  maxLength: 200
+                  minLength: 1
+                amount:
+                  type: string
+                  example: '25.50'
+                  description: Positive decimal amount; JSON numbers and exponent notation are rejected.
+      responses:
+        '201':
+          description: New invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '200':
+          description: Existing invoice for this order and numeric amount
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '400':
+          $ref: '#/components/responses/InvalidInput'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: This order_id already has a different amount
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: RPC temporarily unavailable; retry the same order_id
+  /v1/invoices/{id}:
+    get:
+      summary: Get the invoice and its confirmed transfers
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current invoice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Invoice does not exist
+  /v1/status:
+    get:
+      summary: Read scanner health, network and safe block
+      responses:
+        '200':
+          description: Scanner status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chain_id: {type: integer, enum: [56, 97]}
+                  testnet: {type: boolean}
+                  token_contract: {type: string}
+                  confirmations: {type: integer}
+                  last_scan_at: {type: integer, format: int64}
+                  last_scan_error: {type: string}
+                  safe_block: {type: integer, format: int64}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /healthz:
+    get:
+      summary: Process liveness
+      security: []
+      responses:
+        '200': {description: Process is running}
+  /readyz:
+    get:
+      summary: Scanner readiness
+      security: []
+      responses:
+        '200': {description: Scanner recently succeeded}
+        '503': {description: Scanner uninitialized, stale or failing}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    InvalidInput:
+      description: Invalid JSON, order_id or amount
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or incorrect API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: {type: string}
+    Transfer:
+      type: object
+      properties:
+        tx_hash: {type: string}
+        log_index: {type: integer, format: int64}
+        block_number: {type: integer, format: int64}
+        block_hash: {type: string}
+        block_time: {type: integer, format: int64}
+        amount: {type: string}
+    Invoice:
+      type: object
+      properties:
+        id: {type: string}
+        order_id: {type: string}
+        address: {type: string}
+        address_index: {type: integer}
+        derivation_path: {type: string}
+        amount: {type: string}
+        received_amount: {type: string}
+        is_paid:
+          type: boolean
+          description: True when the confirmed received total is greater than or equal to the requested amount, including late payments. Check status for timing.
+        status:
+          type: string
+          enum: [pending, partially_paid, paid, overpaid, expired, paid_late, overpaid_late]
+        created_at: {type: integer, format: int64}
+        expires_at: {type: integer, format: int64}
+        next_scan_block: {type: integer, format: int64}
+        chain_id: {type: integer, enum: [56, 97]}
+        network: {type: string, enum: [bsc-mainnet, bsc-testnet]}
+        token_contract: {type: string}
+        asset: {type: string, enum: [USDT, TEST-USDT]}
+        required_confirmations: {type: integer}
+        transfers:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transfer'

@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+!.env.testnet.example
+/data/
+/secrets/
+/bin/
+*.sqlite*
+*.seed
+coverage.out
+__pycache__/
