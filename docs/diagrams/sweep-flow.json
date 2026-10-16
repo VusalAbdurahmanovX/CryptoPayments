@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "CryptoPayments | Automatic USDT collection",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "git@github.com:VusalAbdurahmanovX/CryptoPayments.git",
+      "revision": "dfb5c9e8fce1aea0efbddd0bfae43cf4ce5ff242",
+      "link_mode": "local-only"
+    },
+    "output": ".archify/sequence-sweep-flow-20261017-001523/sweep-flow.html"
+  },
+  "participants": [
+    {
+      "id": "db",
+      "type": "database",
+      "label": "SQLite",
+      "sublabel": "Jobs + signed bytes",
+      "sources": [
+        {
+          "path": "sweep_store.go",
+          "line": 34,
+          "end_line": 46
+        },
+        {
+          "path": "sweep_store.go",
+          "line": 112,
+          "end_line": 181
+        }
+      ]
+    },
+    {
+      "id": "signer",
+      "type": "backend",
+      "label": "Sweep signer",
+      "sublabel": "Isolated key access",
+      "sources": [
+        {
+          "path": "sweeper.go",
+          "line": 190,
+          "end_line": 290
+        },
+        {
+          "path": "sweeper.go",
+          "line": 293,
+          "end_line": 342
+        },
+        {
+          "path": "sweeper.go",
+          "line": 353,
+          "end_line": 441
+        }
+      ]
+    },
+    {
+      "id": "chain",
+      "type": "cloud",
+      "label": "BSC / RPC",
+      "sublabel": "Gas wallet / child / treasury",
+      "sources": [
+        {
+          "path": "sweeper.go",
+          "line": 150,
+          "end_line": 169
+        },
+        {
+          "path": "sweeper.go",
+          "line": 353,
+          "end_line": 441
+        }
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "id": "job",
+      "from": "signer",
+      "to": "db",
+      "y": 170,
+      "label": "Read or queue collection",
+      "variant": "emphasis",
+      "note": "Confirmed deposits minus completed collections"
+    },
+    {
+      "id": "check",
+      "from": "signer",
+      "to": "chain",
+      "y": 250,
+      "label": "Check token balance and gas",
+      "variant": "default",
+      "note": "Simulate token transfer; enforce gas-price and top-up caps"
+    },
+    {
+      "id": "gas-save",
+      "from": "signer",
+      "to": "db",
+      "y": 340,
+      "label": "If gas low: persist signed top-up",
+      "variant": "emphasis",
+      "note": "Gas wallet -> child address; commit bytes BEFORE broadcast"
+    },
+    {
+      "id": "gas-send",
+      "from": "signer",
+      "to": "chain",
+      "y": 430,
+      "label": "Broadcast saved BNB transaction",
+      "variant": "default"
+    },
+    {
+      "id": "gas-final",
+      "from": "signer",
+      "to": "chain",
+      "y": 475,
+      "label": "Poll receipt + canonical block",
+      "variant": "default",
+      "note": "Wait for BOTH finalized block and confirmation depth"
+    },
+    {
+      "id": "gas-done",
+      "from": "signer",
+      "to": "db",
+      "y": 565,
+      "label": "Mark gas confirmed; requeue",
+      "variant": "default"
+    },
+    {
+      "id": "recheck",
+      "from": "signer",
+      "to": "chain",
+      "y": 610,
+      "label": "Recheck balance, gas and nonce",
+      "variant": "default"
+    },
+    {
+      "id": "token-save",
+      "from": "signer",
+      "to": "db",
+      "y": 655,
+      "label": "Persist signed USDT transfer",
+      "variant": "emphasis",
+      "note": "Child -> snapshotted main wallet; API has no signing key"
+    },
+    {
+      "id": "token-send",
+      "from": "signer",
+      "to": "chain",
+      "y": 745,
+      "label": "Broadcast saved token transaction",
+      "variant": "default"
+    },
+    {
+      "id": "token-final",
+      "from": "signer",
+      "to": "chain",
+      "y": 790,
+      "label": "Verify finalized outgoing Transfer",
+      "variant": "default",
+      "note": "Expected token, child sender, main-wallet recipient and amount"
+    },
+    {
+      "id": "complete",
+      "from": "signer",
+      "to": "db",
+      "y": 880,
+      "label": "Mark collection completed",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Explicit opt-in",
+      "items": [
+        "AUTO_SWEEP_ENABLED=true and Compose sweep profile.",
+        "Only the signer mounts the deposit seed and gas key."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Funds and payment status",
+      "items": [
+        "Collect confirmed incoming funds minus completed jobs.",
+        "Invoice received_amount and is_paid remain historical facts."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Failure paths",
+      "items": [
+        "Outage or timeout: rebroadcast the identical signed bytes.",
+        "Revert, missing token transfer or nonce conflict: review."
+      ]
+    }
+  ]
+}

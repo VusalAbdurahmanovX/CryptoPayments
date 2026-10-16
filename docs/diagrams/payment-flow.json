@@ -4,11 +4,11 @@
   "meta": {
     "title": "CryptoPayments | Invoice to confirmation",
     "locale": "en",
-    "output": ".archify/sequence-payment-flow-20261016-234259/payment-flow.html",
+    "output": ".archify/sequence-payment-flow-20261017-001523/payment-flow.html",
     "quality_profile": "showcase",
     "repository": {
       "url": "git@github.com:VusalAbdurahmanovX/CryptoPayments.git",
-      "revision": "e237f703d27d6e8deff866795ed56514ba5ab91b",
+      "revision": "dfb5c9e8fce1aea0efbddd0bfae43cf4ce5ff242",
       "link_mode": "local-only"
     },
     "legend": {
@@ -29,12 +29,7 @@
         {
           "path": "http.go",
           "line": 37,
-          "end_line": 45
-        },
-        {
-          "path": "README.md",
-          "line": 71,
-          "end_line": 77
+          "end_line": 65
         }
       ]
     },
@@ -45,14 +40,9 @@
       "sublabel": "External wallet",
       "sources": [
         {
-          "path": "README.md",
-          "line": 1,
-          "end_line": 10
-        },
-        {
           "path": "rpc.go",
-          "line": 133,
-          "end_line": 137
+          "line": 137,
+          "end_line": 141
         }
       ]
     },
@@ -64,8 +54,8 @@
       "sources": [
         {
           "path": "http.go",
-          "line": 91,
-          "end_line": 130
+          "line": 111,
+          "end_line": 150
         },
         {
           "path": "scanner.go",
@@ -87,13 +77,13 @@
       "sources": [
         {
           "path": "store.go",
-          "line": 178,
-          "end_line": 221
+          "line": 181,
+          "end_line": 224
         },
         {
           "path": "store.go",
-          "line": 287,
-          "end_line": 355
+          "line": 290,
+          "end_line": 358
         }
       ]
     },
@@ -105,8 +95,8 @@
       "sources": [
         {
           "path": "rpc.go",
-          "line": 112,
-          "end_line": 137
+          "line": 116,
+          "end_line": 141
         }
       ]
     },
@@ -281,7 +271,8 @@
       "title": "One payment, several transfers",
       "items": [
         "Partial deposits accumulate using 18-decimal integers.",
-        "Excess and late payments keep their detailed status."
+        "Excess and late payments keep their detailed status.",
+        "Collection is separate from invoice payment acceptance."
       ]
     },
     {

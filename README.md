@@ -7,7 +7,7 @@
   <img src="https://img.shields.io/badge/Network-BNB_Smart_Chain-F0B90B?style=flat-square" alt="BNB Smart Chain">
   <img src="https://img.shields.io/badge/Asset-USDT_BEP20-26A17B?style=flat-square" alt="USDT BEP20">
   <img src="https://img.shields.io/badge/Storage-SQLite_WAL-4169E1?style=flat-square" alt="SQLite WAL">
-  <img src="https://img.shields.io/badge/Wallet-Watch--only-8B5CF6?style=flat-square" alt="Watch-only wallet">
+  <img src="https://img.shields.io/badge/API-Watch--only-8B5CF6?style=flat-square" alt="Watch-only API">
 </p>
 
 <h1 align="center">CryptoPayments</h1>
@@ -24,7 +24,8 @@
   <a href="#payment-flow">Payment flow</a> ·
   <a href="#api">API</a> ·
   <a href="openapi.yaml">OpenAPI contract</a> ·
-  <a href="#webhooks">Webhooks</a>
+  <a href="#webhooks">Webhooks</a> ·
+  <a href="#automatic-collection-to-your-main-wallet">Automatic collection</a>
 </p>
 
 ---
@@ -48,7 +49,9 @@
 
 The HTTP API, transfer scanner and webhook dispatcher run in **one Go process**.
 SQLite stores invoices, address allocation, confirmed transfers, scan cursors
-and the optional webhook outbox. BSC JSON-RPC is the external chain data source.
+and the optional webhook outbox. An opt-in signer runs in a **separate process**,
+sharing SQLite for collection jobs and persisted signed transactions. BSC
+JSON-RPC supplies chain data and accepts the signer’s transaction broadcasts.
 
 The server derives deposit addresses from an xpub at `m/44'/60'/0'/0/<index>`.
 `wallet-init` creates the seed separately. When automatic collection is enabled,
@@ -284,6 +287,12 @@ unchanged for retry.
 
 ## Automatic collection to your main wallet
 
+![Optional gas funding and USDT collection sequence](docs/diagrams/sweep-flow.svg)
+
+[Interactive collection sequence](docs/diagrams/sweep-flow.html) ·
+[Architecture](#architecture)
+
+
 Set the main BSC wallet **address** in `.env`. You keep its seed/private key in
 your own wallet to spend funds later; receiving collections does not require
 giving its key to this service. The signer needs the **deposit wallet seed**
@@ -455,11 +464,14 @@ npx --yes solc@0.8.30 --bin --abi -o contracts/build contracts/TestUSDT.sol
 | [`scanner.go`](scanner.go) / [`rpc.go`](rpc.go) | Finalized-range scanning and JSON-RPC validation |
 | [`store.go`](store.go) / [`amount.go`](amount.go) | SQLite transactions, payment state and exact amounts |
 | [`webhook.go`](webhook.go) | HMAC signatures, ordered outbox delivery and retry/backoff |
+| [`sweeper.go`](sweeper.go) / [`sweep_config.go`](sweep_config.go) | Isolated signer, BNB gas funding, token collection and key-file validation |
+| [`sweep_store.go`](sweep_store.go) | Collection jobs, signed transaction ledger and worker heartbeat |
+| [`scripts/sweep_test.py`](scripts/sweep_test.py) | Disposable signed-transfer, gas-funding and restart integration tests |
 | [`openapi.yaml`](openapi.yaml) | Machine-readable API contract |
 | [`scripts/local_test.py`](scripts/local_test.py) | Isolated Anvil setup and transfer integration tests |
 | [`contracts/`](contracts/) | Test-only token source and compiled artifacts |
 | [`docs/diagrams/`](docs/diagrams/) | Archify diagrams, SVG previews and editable JSON sources |
 
-Diagrams describe the receiver/scanner/webhook boundary at the revision pinned
-in their JSON. The optional signer is described in the automatic collection
-section above. A diagram does not imply a public-network deployment.
+The architecture and flow diagrams describe both the watch-only receiver and
+the optional signer at the revision pinned in their JSON. Local signed-transfer
+tests passed; the diagrams do not imply a public-network deployment.
