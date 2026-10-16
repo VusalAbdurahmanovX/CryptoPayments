@@ -134,6 +134,9 @@ CREATE INDEX IF NOT EXISTS events_pending ON events(delivered_at,next_attempt);`
 		db.Close()
 		return nil, err
 	}
+	if err = s.initSweepStore(); err != nil {
+		return nil, err
+	}
 	success = true
 	return s, nil
 }

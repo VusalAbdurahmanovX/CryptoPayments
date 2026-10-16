@@ -1,0 +1,32 @@
+# Disposable integration environment, separate from the receiver development DB.
+services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:stable
+    entrypoint: ["anvil"]
+    command: ["--host", "0.0.0.0", "--chain-id", "97", "--block-time", "1", "--silent"]
+    ports: ["127.0.0.1:18546:8545"]
+  api:
+    image: cryptopayments-go:local
+    env_file: ${SWEEP_TEST_ENV_FILE:?set test env file}
+    ports: ["127.0.0.1:18091:8080"]
+    volumes: ["test-payments:/data"]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+  sweeper:
+    image: cryptopayments-go:local
+    command: ["sweep"]
+    env_file: ${SWEEP_TEST_ENV_FILE:?set test env file}
+    volumes:
+      - test-payments:/data
+      - ${SWEEP_TEST_SECRET_DIR:?set test secret directory}/deposit.seed:/run/secrets/deposit.seed:ro
+      - ${SWEEP_TEST_SECRET_DIR:?set test secret directory}/gas.key:/run/secrets/gas.key:ro
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      disable: true
+volumes:
+  test-payments:

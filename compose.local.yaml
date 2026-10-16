@@ -16,5 +16,12 @@ services:
       POLL_SECONDS: "1"
     depends_on:
       - anvil
+  sweeper:
+    environment:
+      RPC_URL: http://anvil:8545
+      CONFIRMATIONS: "3"
+      SWEEP_POLL_SECONDS: "1"
+    depends_on:
+      - anvil
 volumes:
   local-chain:

@@ -14,6 +14,18 @@ import (
 
 func main() {
 	if len(os.Args) > 1 {
+		if os.Args[1] == "sweep" && len(os.Args) == 2 {
+			if err := runSweepWorker(); err != nil {
+				log.Fatal(err)
+			}
+			return
+		}
+		if os.Args[1] == "gas-wallet-init" && len(os.Args) == 3 {
+			if err := initGasWallet(os.Args[2]); err != nil {
+				log.Fatal(err)
+			}
+			return
+		}
 		if os.Args[1] == "healthcheck" {
 			client := &http.Client{Timeout: 3 * time.Second}
 			resp, err := client.Get("http://127.0.0.1:8080/healthz")
@@ -32,7 +44,7 @@ func main() {
 			}
 			return
 		}
-		log.Fatal("usage: cryptopayments [wallet-init /secure/path/wallet.seed | healthcheck]")
+		log.Fatal("usage: cryptopayments [wallet-init PATH | gas-wallet-init PATH | sweep | healthcheck]")
 	}
 	c, err := loadConfig()
 	if err != nil {
@@ -73,4 +85,33 @@ func main() {
 		_ = server.Close()
 	}
 	workers.Wait()
+}
+
+func runSweepWorker() error {
+	c, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	conf, err := loadSweepConfig(c)
+	if err != nil {
+		return err
+	}
+	s, err := openStore(c)
+	if err != nil {
+		return err
+	}
+	defer s.DB.Close()
+	rpc := newRPC(c.RPCURL)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if err = rpc.validate(ctx, c); err != nil {
+		return err
+	}
+	worker, err := newSweeper(s, rpc, conf)
+	if err != nil {
+		return err
+	}
+	defer worker.Close()
+	log.Printf("Automatic sweep worker; chain_id=%d; main_wallet=%s; gas_wallet=%s", c.ChainID, conf.Treasury, worker.GasAddress)
+	return worker.Run(ctx)
 }

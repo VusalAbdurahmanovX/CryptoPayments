@@ -17,5 +17,33 @@ services:
       - no-new-privileges:true
     stop_grace_period: 20s
 
+  sweeper:
+    image: cryptopayments-go:local
+    command: ["sweep"]
+    profiles: ["sweep"]
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - payments:/data
+      - type: bind
+        source: ${SWEEP_SEED_HOST_PATH:-./secrets/deposit.seed}
+        target: /run/secrets/deposit.seed
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${GAS_KEY_HOST_PATH:-./secrets/gas.key}
+        target: /run/secrets/gas.key
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      disable: true
+    stop_grace_period: 30s
+
 volumes:
   payments:

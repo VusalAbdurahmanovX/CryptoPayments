@@ -1,8 +1,8 @@
 openapi: 3.0.3
 info:
   title: CryptoPayments
-  version: 0.1.0
-  description: Watch-only USDT BEP20 invoice API. Monetary amounts are decimal strings with up to 18 fractional digits. Testnet tokens have no monetary value.
+  version: 0.2.0
+  description: USDT BEP20 invoice API with optional isolated automatic gas funding and treasury collection. Monetary amounts are decimal strings with up to 18 fractional digits. Testnet tokens have no monetary value.
 servers:
   - url: http://127.0.0.1:18090
 security:
@@ -73,6 +73,29 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           description: Invoice does not exist
+  /v1/invoices/{id}/sweeps:
+    get:
+      summary: Read automatic collection jobs and public transaction hashes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Collection history; keys and signed transaction bytes are never included
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sweeps:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SweepJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404': {description: Invoice does not exist}
   /v1/status:
     get:
       summary: Read scanner health, network and safe block
@@ -91,6 +114,14 @@ paths:
                   last_scan_at: {type: integer, format: int64}
                   last_scan_error: {type: string}
                   safe_block: {type: integer, format: int64}
+                  sweeper:
+                    type: object
+                    properties:
+                      running: {type: boolean}
+                      last_tick: {type: integer, format: int64}
+                      last_error: {type: string}
+                      main_wallet_address: {type: string}
+                      gas_wallet_address: {type: string}
         '401':
           $ref: '#/components/responses/Unauthorized'
   /healthz:
@@ -125,6 +156,30 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    SweepJob:
+      type: object
+      properties:
+        id: {type: string}
+        invoice_id: {type: string}
+        main_wallet_address: {type: string}
+        amount: {type: string, description: USDT decimal amount}
+        status: {type: string, enum: [queued, gas_pending, transfer_pending, completed, review]}
+        last_error: {type: string}
+        created_at: {type: integer, format: int64}
+        updated_at: {type: integer, format: int64}
+        transactions:
+          type: array
+          items:
+            type: object
+            properties:
+              id: {type: integer, format: int64}
+              kind: {type: string, enum: [gas, token]}
+              tx_hash: {type: string}
+              from_address: {type: string}
+              nonce: {type: integer, format: int64}
+              amount_units: {type: string, description: Integer wei for gas funding or token base units for USDT}
+              state: {type: string, enum: [prepared, confirmed]}
+              created_at: {type: integer, format: int64}
     Error:
       type: object
       required: [error]

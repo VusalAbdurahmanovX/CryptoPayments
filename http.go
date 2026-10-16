@@ -37,10 +37,30 @@ func (a *API) Handler() http.Handler {
 	private := http.NewServeMux()
 	private.HandleFunc("POST /v1/invoices", a.create)
 	private.HandleFunc("GET /v1/invoices/{id}", a.get)
+	private.HandleFunc("GET /v1/invoices/{id}/sweeps", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := a.Store.Get(r.PathValue("id")); errors.Is(err, errNotFound) {
+			writeError(w, 404, "invoice not found")
+			return
+		} else if err != nil {
+			a.internal(w, err)
+			return
+		}
+		jobs, err := a.Store.sweepJobs(r.PathValue("id"))
+		if err != nil {
+			a.internal(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"sweeps": jobs})
+	})
 	private.HandleFunc("GET /v1/status", func(w http.ResponseWriter, r *http.Request) {
 		a.Scanner.mu.RLock()
 		defer a.Scanner.mu.RUnlock()
-		writeJSON(w, 200, map[string]any{"chain_id": a.Store.Config.ChainID, "testnet": a.Store.Config.ChainID == 97, "token_contract": a.Store.Config.Token, "confirmations": a.Store.Config.Confirmations, "last_scan_at": a.Scanner.LastSuccess, "last_scan_error": a.Scanner.LastError, "safe_block": a.Scanner.SafeBlock})
+		worker, err := a.Store.workerStatus()
+		if err != nil {
+			a.internal(w, err)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"chain_id": a.Store.Config.ChainID, "testnet": a.Store.Config.ChainID == 97, "token_contract": a.Store.Config.Token, "confirmations": a.Store.Config.Confirmations, "last_scan_at": a.Scanner.LastSuccess, "last_scan_error": a.Scanner.LastError, "safe_block": a.Scanner.SafeBlock, "sweeper": worker})
 	})
 	mux.Handle("/v1/", a.auth(private))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

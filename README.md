@@ -35,12 +35,12 @@
 | :--- | :--- | :--- |
 | Fresh HD deposit address for every invoice | Configured token, recipient, confirmations **and** finality | Poll invoice status or consume signed webhooks |
 | Idempotent `order_id` + amount | Exact 18-decimal integer arithmetic | Durable outbox, retry/backoff and per-invoice ordering |
-| Watch-only xpub; signing keys stay offline | Partial transfers accumulate; excess payments count | Persistent invoice snapshots and event IDs |
+| Watch-only API; optional isolated signing worker | Partial transfers accumulate; excess payments count | Persistent invoice snapshots and event IDs |
 
-> **Current scope:** an API-only payment receiver. Funds stay at the generated
-> addresses; treasury collection requires a separate signer/sweep service and
-> BNB for gas. Local EVM integration tests have run. Public BSC Testnet
-> end-to-end validation and real-money validation are still pending.
+> **Current scope:** an API-only payment receiver with optional automatic USDT
+> collection. A separate signer funds child-wallet BNB gas when needed and sends
+> confirmed deposits to `MAIN_WALLET_ADDRESS`. The API never mounts signing keys.
+> Public BSC Testnet end-to-end validation and real-money validation are pending.
 
 ## Architecture
 
@@ -51,8 +51,9 @@ SQLite stores invoices, address allocation, confirmed transfers, scan cursors
 and the optional webhook outbox. BSC JSON-RPC is the external chain data source.
 
 The server derives deposit addresses from an xpub at `m/44'/60'/0'/0/<index>`.
-Only the separate offline `wallet-init` command handles the seed. No signing
-key is supplied to the API runtime.
+`wallet-init` creates the seed separately. When automatic collection is enabled,
+only the isolated `sweeper` process mounts that seed and the gas-wallet key.
+No signing key is supplied to the API runtime.
 
 [Interactive architecture](docs/diagrams/architecture.html) ·
 [Diagram sources & viewing instructions](docs/diagrams/README.md)
@@ -97,6 +98,7 @@ Always deduplicate fulfilment by invoice ID.
 - Durable per-invoice cursors and unique `(tx_hash, log_index)` records.
 - Signed webhook outbox with retry/backoff and per-invoice event ordering.
 - Mainnet configuration (56), public testnet configuration (97), and isolated local EVM tests.
+- Optional automatic gas funding and USDT collection, with persistent signed transactions and restart-safe rebroadcast.
 
 ## Quick local test — no funds or faucet needed
 
@@ -148,6 +150,7 @@ multi-merchant authorization system.
 | --- | --- | --- | --- |
 | `POST` | `/v1/invoices` | Bearer | Create an invoice or replay an existing order |
 | `GET` | `/v1/invoices/{id}` | Bearer | Invoice, confirmed transfers and payment status |
+| `GET` | `/v1/invoices/{id}/sweeps` | Bearer | Collection jobs, main-wallet destination and gas/token transaction hashes |
 | `GET` | `/v1/status` | Bearer | Scanner health, safe block and chain configuration |
 | `GET` | `/healthz` | Public | Process liveness |
 | `GET` | `/readyz` | Public | Scanner readiness; 503 when unhealthy or stale |
@@ -279,6 +282,121 @@ describes finality. This service requires both finality and your configured
 The RPC provider is a trusted data source. A provider outage leaves cursors
 unchanged for retry.
 
+## Automatic collection to your main wallet
+
+Set the main BSC wallet **address** in `.env`. You keep its seed/private key in
+your own wallet to spend funds later; receiving collections does not require
+giving its key to this service. The signer needs the **deposit wallet seed**
+matching `WALLET_XPUB` and a dedicated **gas funding wallet** key.
+
+```text
+Confirmed customer deposit
+    -> child has enough BNB? -> send USDT to main wallet
+    -> otherwise fund child from gas wallet
+         -> wait for gas transaction finality + confirmations
+         -> send USDT to main wallet
+         -> verify the outgoing token Transfer log and finality
+```
+
+The main wallet may be managed in a wallet application or hardware wallet.
+General payouts from it to arbitrary recipients are outside this receiver API.
+
+Prepare files on the host (the commands print only the gas wallet address):
+
+```sh
+install -d -m 0700 secrets
+install -o 10001 -g 10001 -m 0400 /secure/offline/deposit-wallet.seed secrets/deposit.seed
+bin/cryptopayments gas-wallet-init secrets/gas.key
+chown 10001:10001 secrets/gas.key
+chmod 0400 secrets/gas.key
+```
+
+Fund the printed gas wallet with BNB **on the same network**. This balance pays
+the gas funding transaction and the children's token-transfer gas. Without BNB
+the worker waits and reports an error; it cannot create BNB or mark collection
+complete. Use the gas wallet only for this worker so another sender cannot
+consume its nonces.
+
+Configure `.env`:
+
+```dotenv
+AUTO_SWEEP_ENABLED=true
+MAIN_WALLET_ADDRESS=0xYourMainWalletAddress
+SWEEP_SEED_FILE=/run/secrets/deposit.seed
+GAS_PRIVATE_KEY_FILE=/run/secrets/gas.key
+SWEEP_SEED_HOST_PATH=./secrets/deposit.seed
+GAS_KEY_HOST_PATH=./secrets/gas.key
+SWEEP_POLL_SECONDS=10
+SWEEP_TOKEN_GAS_LIMIT=100000
+SWEEP_MAX_GAS_PRICE_WEI=10000000000
+SWEEP_MAX_TOPUP_WEI=2000000000000000
+SWEEP_MIN_AMOUNT=0
+```
+
+```sh
+docker compose --profile sweep up -d --build
+```
+
+`AUTO_SWEEP_ENABLED` authorizes the worker; the `sweep` Compose profile starts it.
+Without the worker, the receiver remains watch-only. Its seed must match the
+configured xpub; mismatched seeds and broadly readable key files are rejected.
+Secrets are mounted only in `sweeper`, read-only, with no published worker ports.
+
+`SWEEP_MIN_AMOUNT=0` collects every positive confirmed deposit, including partial,
+overpaid, late and later additional deposits. Increase it to accumulate small
+deposits before spending gas. A collection uses the confirmed incoming total
+minus previously completed collections. Invoice `received_amount` and `is_paid`
+remain historical payment facts even after the child's token balance reaches 0.
+An invoice's expiry does not disable collection.
+
+The token transaction reserves the configured gas limit at the RPC gas price.
+Gas funding adds a 25% buffer and subtracts existing child BNB. The gas-price cap
+and cumulative per-job top-up cap prevent unbounded funding. Unused BNB remains
+on the child for later deposits. These limits are in **wei**, not USDT.
+
+Read progress:
+
+```sh
+curl -H "Authorization: Bearer $API_KEY" \
+  http://127.0.0.1:18090/v1/invoices/INVOICE_ID/sweeps
+curl -H "Authorization: Bearer $API_KEY" \
+  http://127.0.0.1:18090/v1/status
+```
+
+Jobs expose `queued`, `gas_pending`, `transfer_pending`, `completed` or `review`,
+plus destination, amount, last error, and gas/token transaction hashes. No raw
+signed transaction, seed or private key is returned. `/v1/status.sweeper` reports
+the worker heartbeat, gas-wallet address and last error. Payment readiness and
+sweep readiness are separate; `/readyz` still describes the payment scanner.
+
+Jobs snapshot their main-wallet address when created. Changing the environment
+does not redirect an already queued or signed transaction; new jobs use the new
+address. A shared-volume lock enforces one signer per database. Jobs are processed
+serially to protect gas-wallet nonces. An unconfirmed transaction is never
+replaced with a newly signed transfer: its exact signed bytes are committed to
+SQLite **before broadcast** and replayed after timeouts or restarts. `prepared`
+transaction state includes awaiting acknowledgement or confirmation.
+
+If a transaction reverts, its nonce is consumed unexpectedly, or a successful
+receipt lacks the expected USDT transfer, the job enters `review` and automatic
+sends stop for operator reconciliation. Missing BNB, RPC outages and gas-price
+limits wait/retry without signing duplicate transfers. Stuck pending transactions
+are reported and retained; automatic fee replacement and administrative
+reconciliation endpoints are outside this version. Do not reset the database to
+retry a transfer. Inspect the stored hashes on the configured chain first.
+
+Run isolated signed-transfer tests after building the image and host binary:
+
+```sh
+docker compose build api
+go build -o bin/cryptopayments .
+python3 scripts/sweep_test.py
+```
+
+The test uses disposable volumes, fresh keys, a separate local Anvil node and
+ports 18091/18546. It never funds a public-chain wallet or touches the receiver's
+normal database. Test-only keys and containers are removed on completion.
+
 ## Webhooks
 
 Set one operator-controlled `WEBHOOK_URL` and a 32+ character `WEBHOOK_SECRET`.
@@ -342,6 +460,6 @@ npx --yes solc@0.8.30 --bin --abi -o contracts/build contracts/TestUSDT.sol
 | [`contracts/`](contracts/) | Test-only token source and compiled artifacts |
 | [`docs/diagrams/`](docs/diagrams/) | Archify diagrams, SVG previews and editable JSON sources |
 
-Diagrams describe the checked-in implementation. Their source revision is
-pinned in the diagram JSON; they do not imply that a public network deployment
-or a sweep service exists.
+Diagrams describe the receiver/scanner/webhook boundary at the revision pinned
+in their JSON. The optional signer is described in the automatic collection
+section above. A diagram does not imply a public-network deployment.

@@ -77,6 +77,10 @@ func (r *RPC) call(ctx context.Context, method string, params any, out any) erro
 	if result.Error != nil {
 		return fmt.Errorf("RPC %s error %d", method, result.Error.Code)
 	}
+	if raw, ok := out.(*json.RawMessage); ok {
+		*raw = result.Result
+		return nil
+	}
 	if len(result.Result) == 0 || string(result.Result) == "null" {
 		return fmt.Errorf("RPC %s returned no result", method)
 	}
